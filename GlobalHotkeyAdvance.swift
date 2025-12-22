@@ -150,9 +150,7 @@ nonisolated final class HotkeyManager: @unchecked Sendable {
         
         // CGEventType: https://developer.apple.com/documentation/coregraphics/cgeventtype
         let eventMask = CGEventMask(
-            (1 << CGEventType.keyDown.rawValue)
-                | (1 << CGEventType.keyUp.rawValue)
-                | (1 << CGEventType.flagsChanged.rawValue)
+            (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
         )
 
         let callback: CGEventTapCallBack = { (proxy, type, event, me) in
@@ -207,8 +205,7 @@ nonisolated final class HotkeyManager: @unchecked Sendable {
         CGEvent.tapEnable(tap: eventTap, enable: false)
         self.eventTap = nil
     }
-
-    // The callback function that handles key down events
+    
     private func handleEvent(
         proxy: CGEventTapProxy,
         type: CGEventType,
@@ -220,51 +217,22 @@ nonisolated final class HotkeyManager: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
-        // make sure to not swallow event when it is not part of the target
-        switch type {
-        case CGEventType.keyDown:
-            self.processKeydown(nsEvent)
-        case CGEventType.keyUp:
-            self.processKeyup(nsEvent)
-        case CGEventType.flagsChanged:
-            self.processModifierFlagChange(nsEvent)
-        default:
+        guard type == CGEventType.keyDown else {
+            self.onTargetHotkeyDown(false)
             return Unmanaged.passUnretained(event)
         }
-
-        // only swallowing when the **entire combination** is the target
-        // otherwise, release the event
-        let targetKeyDown = self.checkTargetHotkeyDown()
-        self.onTargetHotkeyDown(targetKeyDown)
-
-        return targetKeyDown ? nil : Unmanaged.passUnretained(event)
-    }
-
-    private func processKeyup(_ event: NSEvent) {
-        self.holdingKeys.remove(event.keyCode)
-    }
-
-    private func processKeydown(_ event: NSEvent) {
-        if !self.holdingKeys.contains(event.keyCode) {
-            self.holdingKeys.insert(event.keyCode)
+        
+        let keyCode = nsEvent.keyCode
+        let modifiers = nsEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if keyCode == self.targetKeyCode && modifiers == self.targetModifierFlags {
+            self.onTargetHotkeyDown(true)
+            return nil
         }
+        
+        self.onTargetHotkeyDown(false)
+        return Unmanaged.passUnretained(event)
     }
-
-    private func processModifierFlagChange(_ event: NSEvent) {
-        // masking with deviceIndependentFlagsMask for consistently across all hardware.
-        // Not really necessary in this case...
-        let newFlags = event.modifierFlags.intersection(
-            .deviceIndependentFlagsMask
-        )
-        if self.holdingModifiers != newFlags {
-            self.holdingModifiers = newFlags
-        }
-    }
-
-    private func checkTargetHotkeyDown() -> Bool {
-        return self.holdingKeys == Set([self.targetKeyCode])
-            && self.holdingModifiers == self.targetModifierFlags
-    }
+    
 
     private func handleAccessibilityPermissionsChange() {
         // The notification is generic, so you should re-check the actual status
@@ -284,3 +252,4 @@ nonisolated final class HotkeyManager: @unchecked Sendable {
         }
     }
 }
+
